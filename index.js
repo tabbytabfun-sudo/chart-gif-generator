@@ -6,11 +6,9 @@ const { createCanvas, Image } = require('canvas');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse JSON (for when we connect n8n later)
 app.use(express.json());
 
 // --- HTML TEMPLATE ---
-// We inject this directly to avoid file path issues on Render
 const getHtml = (chartData) => `
 <!DOCTYPE html>
 <html>
@@ -31,8 +29,6 @@ const getHtml = (chartData) => `
     </div>
     <script>
         const ctx = document.getElementById('myChart').getContext('2d');
-        
-        // Data injected from Node.js
         const rawData = ${JSON.stringify(chartData)};
 
         const chart = new Chart(ctx, {
@@ -50,7 +46,7 @@ const getHtml = (chartData) => `
                         type: 'line',
                         label: 'Elliott Wave (1-5)',
                         data: rawData.wave12345,
-                        borderColor: 'rgba(54, 162, 235, 1)', // Blue
+                        borderColor: 'rgba(54, 162, 235, 1)',
                         borderWidth: 2,
                         tension: 0,
                         pointRadius: 0
@@ -58,8 +54,8 @@ const getHtml = (chartData) => `
                     {
                         type: 'line',
                         label: 'ABC Correction',
-                        data: rawData.waveABC, // Initially empty or full, we will control visibility
-                        borderColor: 'rgba(255, 255, 255, 1)', // White
+                        data: rawData.waveABC,
+                        borderColor: 'rgba(255, 255, 255, 1)',
                         borderWidth: 2,
                         borderDash: [5, 5],
                         tension: 0
@@ -74,13 +70,11 @@ const getHtml = (chartData) => `
                     x: { type: 'time', time: { unit: 'day' }, grid: { color: '#333' } },
                     y: { grid: { color: '#333' } }
                 },
-                animation: false // Disable Chart.js native animation so Puppeteer controls frames
+                animation: false
             }
         });
 
-        // Helper function for Puppeteer to update the chart
         window.updateChart = (abcData) => {
-            // Update the ABC dataset
             chart.data.datasets[2].data = abcData;
             chart.update();
         };
@@ -89,80 +83,63 @@ const getHtml = (chartData) => `
 </html>
 `;
 
-// --- MOCK DATA GENERATOR ---
+// --- MOCK DATA ---
 function getMockData() {
-    // Simple fake dates
     const baseTime = new Date('2023-01-01').getTime();
     const day = 86400000;
-    
-    // Fake Candles (Just a visual placeholder)
     const candles = [];
     for(let i=0; i<20; i++) {
         candles.push({ x: baseTime + (i*day), o: 100+i, h: 105+i, l: 95+i, c: 102+i });
     }
-
-    // Fake Elliott Wave 1-5 (Blue Line)
     const wave12345 = [
-        { x: baseTime, y: 100 },
-        { x: baseTime + (3*day), y: 120 }, // 1
-        { x: baseTime + (5*day), y: 110 }, // 2
-        { x: baseTime + (10*day), y: 150 }, // 3
-        { x: baseTime + (12*day), y: 135 }, // 4
-        { x: baseTime + (15*day), y: 160 }  // 5
+        { x: baseTime, y: 100 }, { x: baseTime + (3*day), y: 120 },
+        { x: baseTime + (5*day), y: 110 }, { x: baseTime + (10*day), y: 150 },
+        { x: baseTime + (12*day), y: 135 }, { x: baseTime + (15*day), y: 160 }
     ];
-
-    // Fake ABC Correction (White Line) - The part we animate
     const waveABC = [
-        { x: baseTime + (15*day), y: 160 }, // Start at 5
-        { x: baseTime + (17*day), y: 140 }, // A
-        { x: baseTime + (18*day), y: 150 }, // B
-        { x: baseTime + (20*day), y: 130 }  // C
+        { x: baseTime + (15*day), y: 160 }, { x: baseTime + (17*day), y: 140 },
+        { x: baseTime + (18*day), y: 150 }, { x: baseTime + (20*day), y: 130 }
     ];
-
     return { candles, wave12345, waveABC };
 }
 
 // --- MAIN ROUTE ---
 app.get('/', async (req, res) => {
     console.log("Received request for Chart GIF...");
-    
     let browser = null;
     try {
-        // 1. Launch Puppeteer (Optimized for Render Free Tier)
+        // LAUNCH CONFIGURATION (Optimized for Docker/Render)
         browser = await puppeteer.launch({
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             headless: 'new',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage', // Crucial for low memory
-                '--single-process', // Crucial for Render
-                '--no-zygote'
-            ]
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process', 
+                '--disable-gpu'
+            ],
+            dumpio: true // Logs Chrome errors to console
         });
 
         const page = await browser.newPage();
-        
-        // Set Viewport (GIF Resolution)
         await page.setViewport({ width: 800, height: 600 });
 
-        // 2. Load Data & HTML
         const mockData = getMockData();
-        // Start with ABC hidden (empty array)
         const initialData = { ...mockData, waveABC: [] }; 
         
         await page.setContent(getHtml(initialData));
-        
-        // Wait for chart to render
         await page.waitForSelector('canvas');
 
-        // 3. Setup GIF Encoder
         const encoder = new GifEncoder(800, 600);
         encoder.start();
-        encoder.setRepeat(0);   // 0 for repeat, -1 for no-repeat
-        encoder.setDelay(500);  // 500ms per frame
-        encoder.setQuality(20); // Lower is better quality, but slower. 20 is balanced.
+        encoder.setRepeat(0);
+        encoder.setDelay(500);
+        encoder.setQuality(20);
 
-        // Helper to take a snapshot and add to GIF
         const addFrame = async () => {
             const buffer = await page.screenshot({ type: 'png' });
             const img = new Image();
@@ -173,30 +150,22 @@ app.get('/', async (req, res) => {
             encoder.addFrame(ctx);
         };
 
-        // --- ANIMATION SEQUENCE ---
-        
-        // Frame 1: Base Chart (1-5 Wave only)
+        // Animation Sequence
         await addFrame();
-
-        // Frame 2: Draw A
         const pointA = [mockData.waveABC[0], mockData.waveABC[1]];
         await page.evaluate((data) => window.updateChart(data), pointA);
         await addFrame();
 
-        // Frame 3: Draw B
         const pointB = [mockData.waveABC[0], mockData.waveABC[1], mockData.waveABC[2]];
         await page.evaluate((data) => window.updateChart(data), pointB);
         await addFrame();
 
-        // Frame 4: Draw C (Complete)
         await page.evaluate((data) => window.updateChart(data), mockData.waveABC);
         await addFrame();
         
-        // Frame 5: Hold final frame longer
         encoder.setDelay(2000);
         await addFrame();
 
-        // 4. Finish and Send
         encoder.finish();
         const buffer = encoder.out.getData();
 
