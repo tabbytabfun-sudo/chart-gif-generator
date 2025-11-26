@@ -108,9 +108,10 @@ app.get('/', async (req, res) => {
     console.log("Received request for Chart GIF...");
     let browser = null;
     try {
-        // LAUNCH CONFIGURATION (Optimized for Docker/Render)
+        // 1. Launch Puppeteer
+        // We removed '--single-process' which causes crashes
+        // We rely on the Docker image's default executable path
         browser = await puppeteer.launch({
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             headless: 'new',
             args: [
                 '--no-sandbox',
@@ -119,13 +120,13 @@ app.get('/', async (req, res) => {
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process', 
                 '--disable-gpu'
-            ],
-            dumpio: true // Logs Chrome errors to console
+            ]
         });
 
         const page = await browser.newPage();
+        
+        // Set Viewport
         await page.setViewport({ width: 800, height: 600 });
 
         const mockData = getMockData();
