@@ -1,23 +1,24 @@
 FROM ghcr.io/puppeteer/puppeteer:21.5.0
 
-# Switch to root user
+# 1. Switch to root to install dependencies
 USER root
-
 WORKDIR /usr/src/app
 
-# --- THE FIX ---
-# Tell Puppeteer: "Don't download Chrome, we already have it!"
+# 2. Tell Puppeteer to skip downloading Chrome (we use the built-in one)
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# We let the base image set the executable path automatically
 
-# Copy package files
+# 3. Install dependencies
 COPY package.json ./
-
-# Install dependencies (This will be super fast now)
 RUN npm install
 
-# Copy the rest of your code
+# 4. Copy app files
 COPY . .
 
-# Run the app
+# 5. CRITICAL: Give permission to the non-root user
+RUN chown -R pptruser:pptruser /usr/src/app
+
+# 6. Switch to the safe user to run Chrome
+USER pptruser
+
 CMD [ "node", "index.js" ]
