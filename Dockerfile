@@ -1,24 +1,34 @@
 FROM ghcr.io/puppeteer/puppeteer:21.5.0
 
-# 1. Switch to root to install dependencies
+# 1. Switch to root to install system dependencies
 USER root
 WORKDIR /usr/src/app
 
-# 2. Tell Puppeteer to skip downloading Chrome (we use the built-in one)
+# 2. Install libraries required for 'canvas' to build correctly
+# This prevents the build from hanging/freezing
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev
+
+# 3. Skip Chrome download (we use the base image's Chrome)
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-# We let the base image set the executable path automatically
 
-# 3. Install dependencies
+# 4. Install Node dependencies
 COPY package.json ./
-RUN npm install
+# We add --verbose so we can see exactly what it's doing
+RUN npm install --build-from-source=false --verbose
 
-# 4. Copy app files
+# 5. Copy app files
 COPY . .
 
-# 5. CRITICAL: Give permission to the non-root user
+# 6. Fix permissions for the safe user
 RUN chown -R pptruser:pptruser /usr/src/app
 
-# 6. Switch to the safe user to run Chrome
+# 7. Switch to safe user
 USER pptruser
 
 CMD [ "node", "index.js" ]
