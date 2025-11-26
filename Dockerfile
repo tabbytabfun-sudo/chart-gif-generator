@@ -4,10 +4,11 @@ FROM ghcr.io/puppeteer/puppeteer:21.5.0
 USER root
 WORKDIR /usr/src/app
 
-# 2. FIX: Delete the broken Google Chrome repo list that causes the crash
+# 2. FIX: Delete the broken Google Chrome repo list (Correct Filename)
+RUN rm -f /etc/apt/sources.list.d/google-chrome.list
 RUN rm -f /etc/apt/sources.list.d/google.list
 
-# 3. Now install the libraries for 'canvas' (It will work now!)
+# 3. Now install the libraries for 'canvas'
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcairo2-dev \
