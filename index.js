@@ -1,7 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
-const GifEncoder = require('gif-encoder-2');
-const { createCanvas, Image } = require('canvas');
+const GIFEncoder = require('gifencoder');
+const { PNG } = require('pngjs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -108,9 +108,6 @@ app.get('/', async (req, res) => {
     console.log("Received request for Chart GIF...");
     let browser = null;
     try {
-        // 1. Launch Puppeteer
-        // We removed '--single-process' which causes crashes
-        // We rely on the Docker image's default executable path
         browser = await puppeteer.launch({
             headless: 'new',
             args: [
@@ -125,8 +122,6 @@ app.get('/', async (req, res) => {
         });
 
         const page = await browser.newPage();
-        
-        // Set Viewport
         await page.setViewport({ width: 800, height: 600 });
 
         const mockData = getMockData();
@@ -135,20 +130,19 @@ app.get('/', async (req, res) => {
         await page.setContent(getHtml(initialData));
         await page.waitForSelector('canvas');
 
-        const encoder = new GifEncoder(800, 600);
+        // Setup GIF Encoder (Pure JS version)
+        const encoder = new GIFEncoder(800, 600);
         encoder.start();
-        encoder.setRepeat(0);
-        encoder.setDelay(500);
-        encoder.setQuality(20);
+        encoder.setRepeat(0);   // 0 for repeat, -1 for no-repeat
+        encoder.setDelay(500);  // frame delay in ms
+        encoder.setQuality(20); // image quality. 10 is default.
 
+        // Helper to take a snapshot and add to GIF
         const addFrame = async () => {
             const buffer = await page.screenshot({ type: 'png' });
-            const img = new Image();
-            img.src = buffer;
-            const canvas = createCanvas(800, 600);
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            encoder.addFrame(ctx);
+            // Decode PNG buffer to raw pixels
+            const png = PNG.sync.read(buffer);
+            encoder.addFrame(png.data);
         };
 
         // Animation Sequence
